@@ -6,7 +6,11 @@ import { SETTINGS_QUERY } from "@/sanity/queries";
 import type { SiteSettings } from "@/sanity/types";
 import { DisableDraftMode } from "@/components/DisableDraftMode";
 
-export default async function SiteLayout({ children }: { children: React.ReactNode }) {
+export default async function SiteLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const [{ data }, { isEnabled: isDraftMode }] = await Promise.all([
     sanityFetch({ query: SETTINGS_QUERY }),
     draftMode(),
@@ -28,8 +32,10 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
         </header>
         <main>{children}</main>
         <footer className="site-footer">
+          {settings?.email && (
+            <a href={`mailto:${settings.email}`}>{settings.email}</a>
+          )}
           <span>{settings?.title ?? "Portfolio"}</span>
-          {settings?.email && <a href={`mailto:${settings.email}`}>{settings.email}</a>}
         </footer>
       </div>
       <SanityLive />
