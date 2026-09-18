@@ -1,0 +1,29 @@
+# Optional safety net: Coolify does the deploying, but this catches a broken
+# build on a PR before Coolify spends server CPU on it. Works on GitHub's free
+# minutes for public and private repos alike.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      # `next build` prerenders pages, so it needs to reach the Sanity dataset.
+      # Add NEXT_PUBLIC_SANITY_PROJECT_ID as a repository *variable*
+      # (Settings → Secrets and variables → Actions → Variables) to enable it.
+      - run: npm run build
+        if: ${{ vars.NEXT_PUBLIC_SANITY_PROJECT_ID != '' }}
+        env:
+          NEXT_PUBLIC_SANITY_PROJECT_ID: ${{ vars.NEXT_PUBLIC_SANITY_PROJECT_ID }}
+          NEXT_PUBLIC_SANITY_DATASET: ${{ vars.NEXT_PUBLIC_SANITY_DATASET || 'production' }}
