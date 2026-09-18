@@ -27,7 +27,7 @@ export default async function SiteLayout({
           </Link>
           <nav>
             <Link href="/">Work</Link>
-            <a href="/studio">Studio</a>
+            <a href="/studio">Sanity</a>
           </nav>
         </header>
         <main>{children}</main>
