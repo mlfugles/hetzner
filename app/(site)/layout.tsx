@@ -36,6 +36,7 @@ export default async function SiteLayout({
           {settings?.email && (
             <a href={`mailto:${settings.email}`}>{settings.email}</a>
           )}
+          <span>{settings?.title ?? "Portfolio"}</span>
         </footer>
       </div>
       <SanityLive />
