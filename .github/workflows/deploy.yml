@@ -76,7 +76,7 @@ jobs:
             NEXT_PUBLIC_SANITY_PROJECT_ID=${{ vars.NEXT_PUBLIC_SANITY_PROJECT_ID }}
             NEXT_PUBLIC_SANITY_DATASET=${{ vars.NEXT_PUBLIC_SANITY_DATASET || 'production' }}
             NEXT_PUBLIC_SITE_URL=${{ env.IS_PROD == 'true' && vars.PROD_SITE_URL || vars.DEV_SITE_URL }}
-            SOURCE_COMMIT=${{ github.sha }}
+            APP_COMMIT=${{ github.sha }}
 
       # Coolify does not watch registries, so trigger the redeploy explicitly.
       # It pulls the moving <branch> tag again and swaps containers once the
