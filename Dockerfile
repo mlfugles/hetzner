@@ -35,11 +35,12 @@ RUN npm run build
 FROM base AS runner
 # Reported by /api/health so a deploy can confirm which commit is live.
 # Declared this late so a new commit doesn't invalidate the build cache.
-ARG SOURCE_COMMIT
+# Not SOURCE_COMMIT: Coolify overrides that at runtime ("HEAD" for images).
+ARG APP_COMMIT
 ENV NODE_ENV=production \
     PORT=3000 \
     HOSTNAME=0.0.0.0 \
-    SOURCE_COMMIT=$SOURCE_COMMIT
+    APP_COMMIT=$APP_COMMIT
 
 RUN addgroup -S nodejs && adduser -S nextjs -G nodejs
 
