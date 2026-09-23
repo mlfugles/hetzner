@@ -32,10 +32,10 @@ export default async function SiteLayout({
         </header>
         <main>{children}</main>
         <footer className="site-footer">
+          <span>{settings?.title ?? "Portfolio"}</span>
           {settings?.email && (
             <a href={`mailto:${settings.email}`}>{settings.email}</a>
           )}
-          <span>{settings?.title ?? "My Portfolio!"}</span>
         </footer>
       </div>
       <SanityLive />

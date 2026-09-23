@@ -1,12 +1,9 @@
-# Optional safety net: Coolify does the deploying, but this catches a broken
-# build on a PR before Coolify spends server CPU on it. Works on GitHub's free
-# minutes for public and private repos alike.
+# Catches a broken build on a PR before it is merged. Pushes to main/develop
+# are built by deploy.yml, so this only runs on pull requests.
 name: CI
 
 on:
   pull_request:
-  push:
-    branches: [main, develop]
 
 jobs:
   check:

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Multi-stage build for Next.js `output: "standalone"`.
-# Coolify (Dockerfile build pack) builds this on the Hetzner server itself and
-# passes every env var marked "Build Variable" as a --build-arg.
+# Built on GitHub Actions (.github/workflows/deploy.yml) and pushed to GHCR;
+# Coolify only pulls and runs the finished image, so the server never builds.
 
 FROM node:22-alpine AS base
 WORKDIR /app
@@ -18,7 +18,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # NEXT_PUBLIC_* are inlined into the client bundle, so they must exist at build
-# time. Declare them as ARGs; Coolify supplies the values. Everything else
+# time. Declare them as ARGs; the workflow supplies the values. Everything else
 # (tokens, secrets) is runtime-only and never enters the image.
 ARG NEXT_PUBLIC_SANITY_PROJECT_ID
 ARG NEXT_PUBLIC_SANITY_DATASET=production
@@ -33,9 +33,14 @@ RUN npm run build
 
 # ---- runtime ---------------------------------------------------------------
 FROM base AS runner
+# Reported by /api/health so a deploy can confirm which commit is live.
+# Declared this late so a new commit doesn't invalidate the build cache.
+# Not SOURCE_COMMIT: Coolify overrides that at runtime ("HEAD" for images).
+ARG APP_COMMIT
 ENV NODE_ENV=production \
     PORT=3000 \
-    HOSTNAME=0.0.0.0
+    HOSTNAME=0.0.0.0 \
+    APP_COMMIT=$APP_COMMIT
 
 RUN addgroup -S nodejs && adduser -S nextjs -G nodejs
 
