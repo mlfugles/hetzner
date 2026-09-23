@@ -1,0 +1,110 @@
+# Builds the Docker image on GitHub's runners (not on the Hetzner server),
+# pushes it to the private GitHub Container Registry, then asks Coolify to
+# pull it and redeploy.
+#
+#   push to main    -> ghcr.io/<owner>/<repo>:main    -> production resource
+#   push to develop -> ghcr.io/<owner>/<repo>:develop -> development resource
+#
+# Every image is also tagged sha-<short>, so a rollback is "set that tag in
+# Coolify and redeploy".
+#
+# Repository settings → Secrets and variables → Actions:
+#   Variables: NEXT_PUBLIC_SANITY_PROJECT_ID, COOLIFY_URL,
+#              NEXT_PUBLIC_SANITY_DATASET (optional, defaults to production),
+#              PROD_SITE_URL, PROD_COOLIFY_UUID,
+#              DEV_SITE_URL,  DEV_COOLIFY_UUID
+#   Secrets:   COOLIFY_API_TOKEN
+name: Build and deploy
+
+on:
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+
+# A newer push to the same branch supersedes an in-flight build.
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      IS_PROD: ${{ github.ref_name == 'main' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Lowercases the image name and produces the tags: <branch> and sha-<short>.
+      # Its OCI "source" label links the package to this repo, so it inherits
+      # the repo's (private) visibility.
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=sha
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          # Hetzner CPX servers are x86. Use linux/arm64 for CAX (Ampere) servers.
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Fall back to the other branch's cache: the npm ci layer is shared.
+          cache-from: |
+            type=gha,scope=${{ github.ref_name }}
+            type=gha,scope=${{ env.IS_PROD == 'true' && 'develop' || 'main' }}
+          cache-to: type=gha,scope=${{ github.ref_name }},mode=max
+          # NEXT_PUBLIC_* are inlined into the bundle, so each environment needs
+          # its own image. Secrets are runtime-only and stay in Coolify.
+          build-args: |
+            NEXT_PUBLIC_SANITY_PROJECT_ID=${{ vars.NEXT_PUBLIC_SANITY_PROJECT_ID }}
+            NEXT_PUBLIC_SANITY_DATASET=${{ vars.NEXT_PUBLIC_SANITY_DATASET || 'production' }}
+            NEXT_PUBLIC_SITE_URL=${{ env.IS_PROD == 'true' && vars.PROD_SITE_URL || vars.DEV_SITE_URL }}
+            SOURCE_COMMIT=${{ github.sha }}
+
+      # Coolify does not watch registries, so trigger the redeploy explicitly.
+      # It pulls the moving <branch> tag again and swaps containers once the
+      # health check passes.
+      - name: Trigger Coolify deployment
+        env:
+          COOLIFY_URL: ${{ vars.COOLIFY_URL }}
+          COOLIFY_UUID: ${{ env.IS_PROD == 'true' && vars.PROD_COOLIFY_UUID || vars.DEV_COOLIFY_UUID }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+        run: |
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            "$COOLIFY_URL/api/v1/deploy?uuid=$COOLIFY_UUID&force=false"
+
+      # The API call above only queues the deployment. Wait until the site
+      # reports this commit, so a failed pull or health check fails the run.
+      - name: Wait for the new commit to go live
+        env:
+          SITE_URL: ${{ env.IS_PROD == 'true' && vars.PROD_SITE_URL || vars.DEV_SITE_URL }}
+        run: |
+          for i in $(seq 1 40); do
+            live=$(curl --silent --max-time 5 "$SITE_URL/api/health" | jq -r '.commit // empty' || true)
+            if [ "$live" = "$GITHUB_SHA" ]; then
+              echo "Live: $live"
+              exit 0
+            fi
+            echo "Waiting ($i/40), live commit: ${live:-unknown}"
+            sleep 15
+          done
+          echo "::error::$SITE_URL did not report $GITHUB_SHA within 10 minutes. Check the deployment log in Coolify."
+          exit 1

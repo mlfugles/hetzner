@@ -73,38 +73,53 @@ everything except the wildcard previews can be tried before buying a domain.
 
 ## 5. Coolify project and applications
 
-1. **Projects → + Add**: `Portfolio`. It comes with a **production** environment; add a second one
+Images are built by GitHub Actions ([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml))
+and pushed to a private GHCR package. Coolify only pulls and runs them, so `next build` never
+competes with the running sites for the server's RAM.
+
+1. **Log the server in to GHCR.** Create a GitHub **classic** personal access token with only the
+   `read:packages` scope (fine-grained tokens do not work with GHCR), then:
+
+   ```bash
+   ssh root@<server-ip>
+   echo <token> | docker login ghcr.io -u <github-username> --password-stdin
+   ```
+
+   Coolify runs `docker pull` as root on the server, so it picks up these credentials.
+2. **Projects → + Add**: `Portfolio`. It comes with a **production** environment; add a second one
    named **development**.
-2. In **production** → **+ New resource → Private Repository (with GitHub App)**:
-   - Repository: the repo, branch **`main`**.
-   - Build pack: **Dockerfile**. Port: **3000**.
+3. In **production** → **+ New resource → Docker Image**:
+   - Image: `ghcr.io/<owner>/<repo>` (lowercase), tag **`main`**. Port: **3000**.
    - Domain: `https://example.com`.
-3. **Environment Variables** – add these, ticking **Build Variable** only where marked:
-
-   | Variable | Build Variable | Runtime Variable |
-   | --- | :-: | :-: |
-   | `NEXT_PUBLIC_SANITY_PROJECT_ID` | ✓ | ✓ |
-   | `NEXT_PUBLIC_SANITY_DATASET` = `production` | ✓ | ✓ |
-   | `NEXT_PUBLIC_SITE_URL` = `https://example.com` | ✓ | ✓ |
-   | `SANITY_API_READ_TOKEN` (Viewer token) | – | ✓ |
-   | `SANITY_REVALIDATE_SECRET` (any long random string) | – | ✓ |
-
-   Both toggles are on by default for new variables; untick **Build Variable** for the two secrets.
-   Coolify passes build variables as `--build-arg`, which the Dockerfile declares as `ARG`s.
-4. **Configuration → Advanced → Deployment & Git**:
-   - **Auto Deploy**: on (push to `main` redeploys).
-   - **Preview Deployments**: on. URL template: `{{pr_id}}.preview.{{domain}}`
-     → `42.preview.example.com`. Leave **Allow Public PR Deployments** off unless the repo is public
-     and you accept running strangers' PRs.
-   - Preview deployments get their own variable set: open the **Preview Deployments** tab of
-     Environment Variables and add `NOINDEX=true` (the rest is copied from production).
+4. **Environment Variables** (all runtime; the `NEXT_PUBLIC_*` values are baked into the image by
+   the workflow): `SANITY_API_READ_TOKEN` (Viewer token) and `SANITY_REVALIDATE_SECRET` (any long
+   random string).
 5. **Configuration → Healthcheck**: enable, method GET, path `/api/health`, port `3000`.
    (The Dockerfile also has a `HEALTHCHECK`; either is enough.)
-6. Click **Deploy**. The first build takes a few minutes (npm install + `next build` on the server);
-   later builds reuse the Docker layer cache. Watch it under **Deployments**.
-7. Repeat steps 2–6 in the **development** environment with branch **`develop`**, domain
-   `https://dev.example.com`, plus `NOINDEX=true`. Point it at the same dataset, or create a second
-   dataset in Sanity so editors can experiment without touching production content.
+6. Repeat steps 3–5 in the **development** environment with tag **`develop`**, domain
+   `https://dev.example.com`, plus `NOINDEX=true`. Both environments read the same Sanity dataset.
+7. **Settings → Advanced → API Access**: enable. Then **Keys & Tokens → API tokens**: create a
+   token with the `deploy` permission.
+8. In the GitHub repo, **Settings → Secrets and variables → Actions**:
+
+   | Kind | Name | Value |
+   | --- | --- | --- |
+   | Secret | `COOLIFY_API_TOKEN` | the token from step 7 |
+   | Variable | `COOLIFY_URL` | `https://coolify.example.com` |
+   | Variable | `NEXT_PUBLIC_SANITY_PROJECT_ID` | your project id |
+   | Variable | `NEXT_PUBLIC_SANITY_DATASET` | optional, defaults to `production` |
+   | Variable | `PROD_SITE_URL` / `DEV_SITE_URL` | `https://example.com` / `https://dev.example.com` |
+   | Variable | `PROD_COOLIFY_UUID` / `DEV_COOLIFY_UUID` | each resource's UUID (in its Coolify URL) |
+
+9. Push to `develop` or `main`, or run the workflow manually (**Actions → Build and deploy → Run
+   workflow**). It builds and pushes the image, asks Coolify to deploy it, and waits until
+   `/api/health` reports the new commit.
+
+**Rollback:** every image is also tagged `sha-<short>`. Set that tag on the resource in Coolify and
+redeploy; set it back to `main`/`develop` afterwards.
+
+**PR previews** are not available with Docker Image resources (Coolify creates previews only for
+Git-based resources). `ci.yml` still builds every PR on GitHub to catch breakage before merge.
 
 ## 6. Sanity
 
@@ -131,8 +146,8 @@ In https://www.sanity.io/manage → your project → **API**:
 
 ## Things to know
 
-- **Builds run on the VPS.** A 4 GB server handles `next build` fine; 2 GB may need swap.
-  Each running Next.js container uses roughly 100–200 MB, so several open PRs are fine.
+- **Builds run on GitHub, not the VPS.** The server only pulls images, so its RAM goes to the
+  running containers (roughly 100–200 MB each).
 - **The build talks to Sanity.** Pages are prerendered, so the dataset must be readable when
   building. It is public on the Free plan, so this just works.
 - **Secrets stay out of the image.** Only `NEXT_PUBLIC_*` values are build args. Coolify warns that

@@ -9,7 +9,7 @@ needs to build and run it.
 - **Next.js 16** (App Router, TypeScript), `output: "standalone"`, no CSS framework
 - **Sanity Studio** embedded at `/studio`, with the **Presentation tool** ("Edit site") for
   click-to-edit and live preview
-- **Dockerfile** multi-stage build that Coolify builds on the server
+- **Dockerfile** multi-stage build, built on GitHub Actions and pushed to GHCR for Coolify to pull
 - **Webhook revalidation** at `/api/revalidate` so a publish refreshes the site even when
   nobody has it open
 - **Health check** at `/api/health`; a `noindex` header on preview/dev deployments (`NOINDEX=true`)
@@ -56,7 +56,7 @@ needs to build and run it.
 
 ## Try the production image locally
 
-This is exactly what Coolify does on the server:
+This is the same build the deploy workflow runs on GitHub:
 
 ```bash
 docker build \
@@ -67,8 +67,8 @@ docker run --rm -p 3000:3000 -e SANITY_API_READ_TOKEN=<viewer-token> portfolio
 ```
 
 Note that `next build` prerenders the pages, so the Sanity dataset must be reachable while
-building. That is fine on Coolify (it builds with the real environment variables), but it means
-CI needs the project id too – see `.github/workflows/ci.yml`.
+building, so the GitHub workflows need the project id as a repository variable – see
+`.github/workflows/deploy.yml`.
 
 ## Environment variables
 
